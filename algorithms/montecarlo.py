@@ -1,7 +1,10 @@
 import math
 from envs.blackjack import MyBlackjackEnv
-
-colors = [
+import itertools
+import networkx as nx
+import matplotlib.pyplot as plt
+  
+colors = 2*[
 	'\033[31m',
 	'\033[32m',
 	'\033[33m',
@@ -19,6 +22,7 @@ colors = [
 ]
     
 class TreeNode:
+  newid = itertools.count()
   def __init__(self, state: tuple, parent: 'TreeNode' = None) -> None:
     """Initialize a TreeNode for Monte Carlo Tree Search.
 
@@ -27,7 +31,8 @@ class TreeNode:
 
     Keyword Arguments:
         parent -- Parent node (default: {None})
-    """    
+    """
+    self.id = next(TreeNode.newid)
     self.state = state
     self.children = []
     self.parent = parent
@@ -51,7 +56,7 @@ class TreeNode:
         ret += child.__str__(level + 1)
     return ret
 
-class TreeSearch:
+class Tree:
   def __init__(self, env: MyBlackjackEnv, c: float = 1.4) -> None:
     """Initialize a Tree for Monte Carlo Tree Search.
 
@@ -68,6 +73,22 @@ class TreeSearch:
     if hasattr(self, 'root'):
       return str(self.root)
     return 'Tree is empty!'
+  
+  def display(self) -> None:
+    def add_edge(node, G):
+      for action, child in node.children:
+        G.add_node(child.id, label = '({}, {}, {}) reward {:.2f}'.format(*child.state, child.reward))
+        G.add_edge(node.id, child.id, label = 'Hit' if action else 'Stand')
+        add_edge(child, G)
+    T = nx.DiGraph()
+    T.add_node(self.root.id, label = '({}, {}, {}) reward {:.2f}'.format(*self.root.state, self.root.reward))
+    add_edge(self.root, T)
+    pos = nx.nx_agraph.graphviz_layout(T, prog = 'dot')
+    node_labels = nx.get_node_attributes(T, 'label')
+    edge_labels = nx.get_edge_attributes(T, 'label')
+    nx.draw(T, pos, labels = node_labels, node_shape = 's', node_size = 600, node_color = (0, 0, 0, 0))
+    nx.draw_networkx_edge_labels(T, pos, edge_labels = edge_labels)
+    plt.show()
     
   def tree_policy(self, parent: TreeNode):
     """UCB score based policy for best child selection.
@@ -115,10 +136,11 @@ class TreeSearch:
     
     if node.is_terminal:
       return
-    for action in range(self.env.action_space.n): #! Maybe use env
+    for action in range(self.env.action_space.n):
       self.env.reset(init_observation = node.state)
       state, _, _, _, _ = self.env.step(action)
       child = TreeNode(state, parent = node)
+      if action == 0: child.is_terminal = True # In blackjack, you cannot continue once you stand (terminal node)
       node.children.append((action, child))
       
   def simulate(self, node: TreeNode, n_sims: int = 1) -> float:
@@ -140,10 +162,10 @@ class TreeSearch:
       # Simulate until temrination with random actions
       terminated  = False
       while not terminated:
-        action = self.env.action_space.sample()
+        action = 0 if (node.parent and node.parent.state == node.state) else self.env.action_space.sample()
         _, reward, terminated, _, _ = self.env.step(action)
       total_reward += reward
-    return total_reward
+    return total_reward/n_sims
   
   def backup(self, node: TreeNode, reward: float):
     """Use the accumulated rewards of simulations to back up and update the values of nodes in the snowcap
@@ -157,7 +179,7 @@ class TreeSearch:
       node.reward += reward
       node = node.parent
       
-  def search(self, state: tuple, n_iters: int):
+  def search(self, state: tuple, n_iters: int, n_rollouts: int = 100):
     """Run multiple iterations of selection, simuation, expansion, backup procedure
 
     Arguments:
@@ -166,17 +188,12 @@ class TreeSearch:
     """    
     self.root = TreeNode(state)
     for _ in range(n_iters):
-      # print('Iter [{}/{}]'.format(_, n_iters))
-      # print(self, end = '')
       node = self.select(self.root)
-      # print('Selected node is {} - visits = {}'.format(node.state, node.visits))
       if not node.visits: # First time traversing the node
-        reward = self.simulate(node) # Rollout
-        # print('Simulated reward = ', reward)
+        reward = self.simulate(node, n_sims = n_rollouts) # Rollout
         self.backup(node, reward)
       else:
         self.expand(node)
-      # print()
         
   def get_action(self):
     """Get best possible action from tree search

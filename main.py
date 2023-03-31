@@ -1,12 +1,14 @@
 from envs.blackjack import MyBlackjackEnv
-from algorithms.montecarlo import TreeSearch, TreeNode
+from algorithms.montecarlo import Tree, TreeNode
 from gym.envs.toy_text.blackjack import BlackjackEnv
+import matplotlib.pyplot as plt
+import networkx as nx
 
 env = MyBlackjackEnv()
-tree = TreeSearch(env)
+tree = Tree(env)
 
-tree.search((10, 5, False), 10)
-print(tree)
+tree.search((2, 2, False), n_iters = 1000, n_rollouts = 1000)
+tree.display()
 
 # game = BlackjackEnv(render_mode = 'human')
 
