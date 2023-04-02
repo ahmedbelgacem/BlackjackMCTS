@@ -3,6 +3,10 @@ from envs.blackjack import MyBlackjackEnv
 import itertools
 import networkx as nx
 import matplotlib.pyplot as plt
+import warnings
+import random
+
+warnings.simplefilter('ignore', UserWarning) # Networkx raises node color warning
   
 colors = 2*[
 	'\033[31m',
@@ -77,20 +81,20 @@ class Tree:
   def display(self) -> None:
     def add_edge(node, G):
       for action, child in node.children:
-        G.add_node(child.id, label = '({}, {}, {}) reward {:.2f}'.format(*child.state, child.reward))
+        G.add_node(child.id, label = '({}, {}, {})\nQ = {:.2f},  N = {}'.format(*child.state, child.reward, child.visits))
         G.add_edge(node.id, child.id, label = 'Hit' if action else 'Stand')
         add_edge(child, G)
     T = nx.DiGraph()
-    T.add_node(self.root.id, label = '({}, {}, {}) reward {:.2f}'.format(*self.root.state, self.root.reward))
+    T.add_node(self.root.id, label = '({}, {}, {})\nQ = {:.2f},  N = {}'.format(*self.root.state, self.root.reward, self.root.visits))
     add_edge(self.root, T)
     pos = nx.nx_agraph.graphviz_layout(T, prog = 'dot')
     node_labels = nx.get_node_attributes(T, 'label')
     edge_labels = nx.get_edge_attributes(T, 'label')
-    nx.draw(T, pos, labels = node_labels, node_shape = 's', node_size = 600, node_color = (0, 0, 0, 0))
-    nx.draw_networkx_edge_labels(T, pos, edge_labels = edge_labels)
+    nx.draw(T, pos, labels = node_labels, node_shape = 's', node_size = 600, node_color = (0, 0, 0, 0), font_size = 10)
+    nx.draw_networkx_edge_labels(T, pos, edge_labels = edge_labels, font_size = 10)
     plt.show()
     
-  def tree_policy(self, parent: TreeNode):
+  def policy(self, parent: TreeNode):
     """UCB score based policy for best child selection.
 
     Arguments:
@@ -109,6 +113,10 @@ class Tree:
       if score > best_score:
         best_score = score
         best_child = child
+      elif score == best_score: # If we have two nodes with the same score, we randomly pick one of them (since we always have 2 children, we toss a coin and decide whether we change the best child or keep the other one)
+        if random.random() > .5:
+          best_score = score
+          best_child = child
     return best_child
     
   def select(self, node: TreeNode):
@@ -119,7 +127,7 @@ class Tree:
     """
     # Traverse path down to leaf node (leaf node = does not have children)
     while not node.is_leaf:
-      node = self.tree_policy(node)
+      node = self.policy(node)
     return node
   
   def expand(self, node: TreeNode):
@@ -173,7 +181,7 @@ class Tree:
     Arguments:
         node -- Starting node to backup from.
         reward -- Reward obtained from simulations
-    """    
+    """
     while node is not None:
       node.visits += 1
       node.reward += reward
